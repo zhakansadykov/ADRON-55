@@ -222,6 +222,7 @@ seconds on a laptop-class machine.
   conditions, road search, and quality scoring.
 - [`docs/3D_RECONSTRUCTION.md`](docs/3D_RECONSTRUCTION.md) — projection
   matching, weighted least-squares fitting, and vertex finding.
+
 The reasoning behind each calibration, and the diagnostics that led to it, are
 described in Section 3 of the accompanying paper.
 
