@@ -46,7 +46,7 @@ authors:
       Almaty, Kazakhstan
   - given-names: Zhakypbek
     family-names: Sadykov
-    orcid: 'https://orcid.org/0009-0003-7717-640X'
+    orcid: 'https://orcid.org/0000-0001-7527-8945'
     affiliation: >-
       Institute of Physics and Technology, Satbayev University,
       Almaty, Kazakhstan
@@ -73,7 +73,7 @@ keywords:
   - track-based alignment
   - reproducibility
 license: BSD-3-Clause
-version: '1.0'
+version: '1.0.1'
 preferred-citation:
   type: article
   title: >-
@@ -101,6 +101,6 @@ preferred-citation:
       orcid: 'https://orcid.org/0000-0001-9528-5069'
     - given-names: Zhakypbek
       family-names: Sadykov
-      orcid: 'https://orcid.org/0009-0003-7717-640X'
+      orcid: 'https://orcid.org/0000-0001-7527-8945'
   journal: Applied Sciences
   year: 2026

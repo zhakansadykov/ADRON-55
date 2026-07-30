@@ -1,7 +1,7 @@
 {
   "upload_type": "software",
   "title": "ADRON-55 reconstruction pipeline: an open reprocessing and detector-response analysis chain for the ADRON-55 ionization calorimeter",
-  "version": "1.0",
+  "version": "1.0.1",
   "language": "eng",
   "access_right": "open",
   "license": "bsd-3-clause",
@@ -54,7 +54,7 @@
     {
       "name": "Sadykov, Zhakypbek",
       "affiliation": "Institute of Physics and Technology, Satbayev University, Almaty, Kazakhstan",
-      "orcid": "0009-0003-7717-640X"
+      "orcid": "0000-0001-7527-8945"
     }
   ],
   "related_identifiers": [
