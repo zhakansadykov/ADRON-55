@@ -64,6 +64,12 @@ def main():
                     help="minimum planes per track (6 = 3+3, continuous slope)")
     ap.add_argument('--min-hits-row', type=int, default=50,
                     help="minimum hits in a plane before its offset is updated")
+    ap.add_argument('--season', default=None,
+                    help="restrict to one observing season, e.g. 2021. Filtering is on the "
+                         "event timestamp, not on the directory, so it is unaffected by "
+                         "misfiled runs. Note that restricting data.years in the "
+                         "configuration instead would renumber global_id and silently "
+                         "break the match against the catalogue.")
     args = ap.parse_args()
 
     import yaml
@@ -73,7 +79,8 @@ def main():
     catalog = os.path.join(data_cfg['processed_dir'], data_cfg['catalog_file'])
     current_align = cfg['geometry'].get('row_alignment_mm', {}) or {}
     targets = load_target_ids(catalog, args.min_quality)
-    print(f"To process: {len(targets)} events (limit {args.limit})")
+    print(f"To process: {len(targets)} events (limit {args.limit})"
+          + (f", season {args.season} only" if args.season else ""))
 
     real_pos = defaultdict(list)   # layer_idx -> measured positions, in mm
     slope_x_all, slope_y_all = [], []
@@ -81,6 +88,8 @@ def main():
 
     for ev in data_loader.iter_all_events(data_cfg['raw_dir'], years=data_cfg.get('years')):
         if ev['global_id'] not in targets:
+            continue
+        if args.season and not ev['event_time'].startswith(args.season):
             continue
         done += 1
         with contextlib.redirect_stdout(io.StringIO()):
