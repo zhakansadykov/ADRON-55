@@ -1,450 +1,216 @@
-# 3D Track Reconstruction
+# Three-Dimensional Reconstruction
 
-Module `src/tracker.py` reconstructs three-dimensional particle tracks from
-the per-projection 2D tracks produced by the road-search finder (see
-`event_quality.py`). It combines the X and Y projections into 3D tracks,
-fits them with a weighted least-squares line, and locates shower vertices.
+Module: `src/tracker.py`.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Hybrid X↔Y Matching](#hybrid-xy-matching)
-- [Weighted Least Squares Fitting](#weighted-least-squares-fitting)
-- [Shower Vertex Finding](#shower-vertex-finding)
-- [Physics: Landau Fluctuations](#physics-landau-fluctuations)
-- [Configuration](#configuration)
-- [Worked Examples](#worked-examples)
-- [Known Limitations](#known-limitations)
-- [Validation Results](#validation-results)
-
-## Overview
-
-The 3D reconstruction proceeds in four stages:
-
-1. **Hybrid X↔Y matching.** Combine the X and Y 2D tracks into candidate 3D
-   tracks, using energy-ratio matching for simple cases and geometric
-   proximity for complex cases.
-2. **3D hit construction.** Build 3D points from the matched 2D tracks,
-   interpolating the unmeasured coordinate from the partner track.
-3. **Weighted least-squares fit.** Fit a straight line to the 3D hits,
-   weighting each point by the multiple scattering accumulated above it.
-4. **Vertex finding.** Locate the shower vertex using a particle-type-specific
-   strategy.
-
-**Gamma-row exclusion.** The gamma rows (1–2) are excluded from the direction
-fit. They are separated from the hadron block by 22 cm Pb + 2.2 m air, so a
-gamma-row hit does not lie on the straight line defined by the hadron-block
-segment. Including them would impose a spurious tilt on the reconstructed
-direction. This is configured via `tracking.fit_exclude_row_idx: [0, 1]`.
-
-## Hybrid X↔Y Matching
-
-### The problem with pure energy-ratio matching
-
-The original (MATLAB-style) approach sorts the X and Y tracks by energy and
-pairs them by rank:
-
-```python
-x_sorted = sorted(x_tracks, key=energy, reverse=True)
-y_sorted = sorted(y_tracks, key=energy, reverse=True)
-# Pair by rank: X[0]↔Y[0], X[1]↔Y[1], ...
-```
-
-Physical motivation: a higher-energy particle leaves proportionally more
-ionization in both projections.
-
-**Problem: Landau fluctuations.** When a charged particle traverses matter,
-it loses energy in random, discrete amounts (knocking out electrons). This is
-described by the Landau distribution:
-
-```
-For a 10 GeV muon through 1 cm of lead:
-  - Mean energy loss: 2 MeV
-  - But it can be: 0.5 MeV (rare event)
-  - Or: 15 MeV (delta electron knocked out a lot of ionization)
-```
-
-Practical consequence:
-
-```
-Real event with 2 muons:
-  Muon A: E = 5 GeV
-  Muon B: E = 3 GeV
-
-Due to Landau fluctuations, the energy ranks can FLIP:
-  X-projection: E_X(A) = 4800, E_X(B) = 3200  → rank: A > B  ✓
-  Y-projection: E_Y(A) = 2900, E_Y(B) = 3100  → rank: B > A  ✗
-
-MATLAB-style matching would pair INCORRECTLY:
-  X[0] (A) ↔ Y[0] (B)  ← WRONG
-  X[1] (B) ↔ Y[1] (A)  ← WRONG
-```
-
-Special case — delta electrons: roughly 1 in 100 muons knocks out a delta
-electron with E > 10 keV:
-
-```
-  - Normal cluster: 300 ADC counts
-  - Cluster with delta electron: 3000 ADC counts (×10)
-```
-
-The energy ranks can flip entirely.
-
-### The hybrid solution
-
-**Step 1: MATLAB-style matching (fast, for obvious cases).**
-
-```python
-for i in range(min(len(x), len(y))):
-    x_energy = compute_energy(x[i])
-    y_energy = compute_energy(y[i])
-    ratio = max(x_energy, y_energy) / min(x_energy, y_energy)
-    if ratio <= 3.0:
-        # MATLAB-style worked — keep the pair
-        matches.append((x[i], y[i], 'energy'))
-    else:
-        # Ratio too large — need geometry
-        geometry_candidates.append((x[i], y[i]))
-```
-
-**Step 2: Geometric proximity (for complex cases).**
-
-```python
-# Extrapolate all tracks to Z_COMMON = 2000 mm (detector midpoint)
-for x_track in geometry_candidates_x:
-    x_mm = x_track.slope * Z_COMMON + x_track.intercept
-for y_track in geometry_candidates_y:
-    y_mm = y_track.slope * Z_COMMON + y_track.intercept
-
-# Build a cost matrix and apply the Hungarian algorithm
-cost_matrix[i, j] = sqrt(x_points[i]**2 + y_points[j]**2)
-x_indices, y_indices = linear_sum_assignment(cost_matrix)
-```
-
-Physical motivation for the geometric approach:
-
-- If the X and Y tracks belong to the same particle, their extrapolations
-  meet at nearby points in the XY plane.
-- This approach does not depend on energy, so it is robust against Landau
-  fluctuations.
-- It uses only the track geometry (slope, intercept).
-
-**Comparison of approaches.**
-
-| Criterion | MATLAB-style | Geometric proximity | Hybrid |
-|---|---|---|---|
-| Single particles | ✓ | ✓ | ✓ |
-| Dense showers | ✗ | ✓ | ✓ |
-| Robust to Landau fluctuations | ✗ | ✓ | ✓ |
-| Robust to delta electrons | ✗ | ✓ | ✓ |
-| Speed | O(N log N) | O(N³) | O(N log N + N³) |
-
-## Weighted Least Squares Fitting
-
-### The problem with ordinary least squares
-
-The original approach treats all 3D hits as equally precise:
-
-```python
-coeffs_x = np.polyfit(z_vals, x_vals, 1)  # all weights = 1
-```
-
-**Problem.** The X and Y layers alternate in height:
-
-```
-X-layers: 4275, 1460, 1010, 630 mm (rows 1, 3, 5, 7)
-Y-layers: 4200, 1300,  820, 470 mm (rows 2, 4, 6, 8)
-```
-
-When constructing 3D hits, interpolation is used:
-
-```
-For an X-hit (z = 1460 mm):
-  x_mm = measured (from row 3)
-  y_mm = interpolated from the Y-track (no Y-layer at z = 1460 mm)
-```
-
-The interpolated coordinate has a larger uncertainty, but ordinary least
-squares does not distinguish it from a measured coordinate.
-
-### The solution: weighted least squares
-
-```python
-# Weights for each point:
-# X-hit: measured X (w_x = 1.0), interpolated Y (w_y = 0.1)
-# Y-hit: interpolated X (w_x = 0.1), measured Y (w_y = 1.0)
-weights_x = [1.0, 1.0, 1.0, 1.0, 0.1, 0.1, 0.1, 0.1]  # for X-hits
-weights_y = [0.1, 0.1, 0.1, 0.1, 1.0, 1.0, 1.0, 1.0]  # for Y-hits
-
-coeffs_x = np.polyfit(z_vals, x_vals, 1, w=np.sqrt(weights_x))
-coeffs_y = np.polyfit(z_vals, y_vals, 1, w=np.sqrt(weights_y))
-```
-
-**Chi-squared normalization by cluster size.**
-
-Without normalization, χ² grows with cluster size:
-
-```
-Single muon:    χ² = 453 mm²   (looks bad)
-Wide shower:    χ² = 5000 mm²  (looks even worse)
-```
-
-Normalization by a characteristic cluster size:
-
-```python
-SIGMA_TYPICAL_MM = 200.0  # mm (typical cluster size)
-chi2_norm = chi2_raw / (SIGMA_TYPICAL_MM ** 2)
-chi2_ndf = chi2_norm / ndf  # dimensionless, ~1 for a good track
-```
-
-Interpretation:
-
-- `chi2_ndf ≈ 1` → the track is well described by a straight line
-- `chi2_ndf > 10` → the track is rejected
-
-## Shower Vertex Finding
-
-The vertex-finding strategy is particle-type-specific.
-
-**Penetrating muon.** Extrapolate all tracks to a height of 15 km, cluster
-the extrapolation points (DBSCAN-like), and take the mean position of each
-cluster as a vertex. Result: a vertex at ~15 km, corresponding to the muon
-production point.
-
-**Hadron shower.** The vertex is the point of the first nuclear interaction,
-not the point where tracks converge. Algorithm:
-
-1. Ignore rows 1–2 (gamma block, before 22 cm Pb).
-2. Find the first layer with ≥3 clusters in rows 3–8.
-3. If none is found, look for a sharp energy rise (>1000 and >3× the
-   previous layer).
-4. Fallback: the first layer with signal in rows 3–8.
-
-Result: a vertex in row 3 (z ≈ 1.46 m) — the first nuclear interaction.
-
-**EM shower / neutral particle.** Locate the vertex from the energy-deposition
-profile (energy maximum).
-
-## Physics: Landau Fluctuations
-
-**Calculation for ADRON-55.**
-
-Ionization chamber:
-
-```
-Gas: argon + CO₂ (or similar)
-Gas gap thickness: ~1–2 cm
-Pressure: ~1 atm
-Particle: muon with E = 10 GeV
-```
-
-Mean energy loss (Bethe-Bloch formula):
-
-```
-dE/dx ≈ 2 keV/cm (for Ar at 1 atm)
-E_deposited = dE/dx × thickness = 2 keV/cm × 2 cm = 4 keV
-```
-
-Landau fluctuations:
-
-```
-ξ ≈ 0.5 keV (for 2 cm Ar)
-MPV ≈ 3.5 keV (Most Probable Value)
-FWHM ≈ 4 × ξ ≈ 2 keV
-```
-
-Relative fluctuation:
-
-```
-σ/E ≈ FWHM / (2.35 × E) ≈ 2 / (2.35 × 4) ≈ 21%
-```
-
-**Practical consequences.**
-
-For a single layer:
-
-```
-Muon E = 10 GeV crossing row 3 (X-projection):
-  - Mean cluster energy: 300 ADC counts
-  - Due to Landau: E_min ≈ 150, E_max ≈ 900 (factor of 6)
-```
-
-For a full track (sum over 4 X-layers):
-
-```
-Without Landau: E_total = 300 + 300 + 300 + 300 = 1200
-With Landau:    E_total = 150 + 900 + 300 + 450 = 1800   (+50%)
-                E_total = 450 + 150 + 200 + 600 = 1400   (+17%)
-                E_total = 100 + 200 + 150 + 250 = 700    (-42%)
-Spread: 700 – 1800 (factor of 2.5)
-```
-
-**Why the 120 mm channel width does not protect against Landau fluctuations.**
-Landau fluctuations occur along the particle trajectory (in the gas), not
-across it.
-
-```
-        ┌─────────────────────────────────┐  ← strip, 120 mm wide
-        │                                 │     (does NOT affect Landau)
-        │    ╲                            │
-        │     ╲  particle track           │
-        │      ╲                          │
-        │───────╲─────────────────────────│  ← gas thickness (1–2 cm)
-        │        ╲                        │     (THIS determines Landau)
-        └─────────────────────────────────┘
-```
-
-The only mitigations are:
-
-- Summing over many layers: σ decreases by a factor of √N.
-- The geometric approach: does not depend on energy at all.
-- Delta-electron rejection: a cluster-energy filter.
-
-## Configuration
-
-```yaml
-tracking:
-  # Basic parameters
-  radius: 3
-  threshold: 5
-  h_max_extrapolation: 500000  # 500 m
-
-  # Cosmic-ray vertex extrapolation
-  cosmic_ray:
-    extrapolation_mode: "auto"  # auto | fixed
-    auto_heights_m:
-      penetrating_muon: 15000   # 15 km
-      hadron_shower: 8000       # 8 km
-      em_shower: 10000          # 10 km
-      neutral_candidate: 8000
-      unknown: 10000
-    fixed_height_m: 10
-    vertex_clustering_eps_m: 500  # vertex clustering radius
-    vertex_min_tracks: 2
-
-  # Hybrid X↔Y matching
-  hybrid_matching:
-    # Energy-ratio threshold: below → MATLAB-style, above → geometry
-    energy_ratio_threshold: 3.0
-    # Extrapolation height for geometric matching (mm)
-    # Optimal: detector midpoint
-    z_common_mm: 2000.0
-    # Max distance for geometric matching (mm)
-    geometry_max_distance_mm: 5000.0
-    # Method priority order
-    method_priority: ["energy", "geometry"]
-
-  # 3D fitting
-  fitting:
-    # Characteristic cluster size for χ² normalization (mm)
-    sigma_typical_mm: 200.0
-    # Track rejection threshold on χ²/ndf
-    chi2_ndf_threshold: 10.0
-    # Minimum number of 3D hits for fitting
-    min_hits_3d: 3
-    # Use Weighted Least Squares
-    weighted_least_squares: true
-    # WLS weights
-    weights:
-      real_hit: 1.0
-      interpolated_hit: 0.1
-
-  # Vertex finding
-  vertex_finding:
-    # Hadron showers: minimum clusters in a layer for shower start
-    hadron_shower_min_clusters: 3
-    hadron_shower_energy_threshold: 1000
-    hadron_shower_energy_ratio: 3.0
-    # Ignore rows 1–2 (gamma block) when finding the hadron vertex
-    ignore_gamma_block: true
-
-  # Gamma rows (row 1,2 = idx 0,1) are excluded from the direction fit:
-  # they are separated from the hadron block by 22 cm Pb + 2.2 m air.
-  fit_exclude_row_idx: [0, 1]
-```
-
-## Worked Examples
-
-**Example 1: single vertical muon.**
-
-```
-Input: 1 X-track (θ = 2°), 1 Y-track (θ = -4°)
-Hybrid algorithm:
-  Match (energy): X#0 (E = 14000) ↔ Y#0 (E = 13500) [ratio = 1.04]
-Result:
-  Track3D #0 (energy): 7 hits, zenith = 3°, azimuth = 207°, chi2/ndf = 0.01
-  Vertex #0: (0, 0, 15000000) mm = 15.0 km
-```
-
-**Example 2: hadron shower (event ID = 0).**
-
-```
-Input: 5 X-tracks, 5 Y-tracks
-Hybrid algorithm:
-  Match (energy): X#0 ↔ Y#0 [ratio = 1.2]
-  Match (energy): X#1 ↔ Y#1 [ratio = 1.5]
-  Match (geometry): X#2 ↔ Y#3 [cost = 1200 mm]  ← ratio was 5.2
-Result:
-  2 × Track3D with chi2/ndf < 1
-  Vertex #0: (0, 0, 1460) mm = 1.46 m (row 3)
-```
-
-## Known Limitations
-
-- **Energy calibration is not finalized.** The `mip_in_mv` value (0.39)
-  disagrees with the documentation value (390 mV) by a factor of ~1000 in
-  absolute scale. The energy spectrum is not used as a physics result until
-  this is resolved.
-- **Two-point tracks / angular resolution.** Only ~30% of particles reach the
-  lower rows, so most tracks are two-point (quantized slope). Full azimuthal
-  isotropy is not achievable with this geometry; this is a physical limit of
-  the detector, not a software bug.
-- **Noisy multi-track events ("stubs").** Extending the seeds to the lower
-  rows produced rare (0.2% of events) but "explosive" multi-track events
-  (~12 short 2-point tracks from scattered shower clusters). These are not
-  used in the angular analysis (only single 3+3 tracks are used). Cleaning
-  shower axes is future work.
-- **Particle classifier.** Tied to the earlier row arrangement (gamma,
-  penetration); after the row-composition change it requires revision. It is
-  not used as a physics result.
-- **Monte Carlo comparison (Hadr55/Geant4).** A slot is reserved in the paper
-  structure; to be filled when simulation access is available.
-
-## Validation Results
-
-The azimuthal uniformity of single penetrating 3+3 tracks was used to
-validate the reconstruction. The progression of the uniformity statistic
-(χ²/ndf against a uniform distribution) is:
-
-| Stage | χ²/ndf (n_rows ≥ 6) |
-|---|---|
-| Original (gamma in fit, old stitching) | ~1324 |
-| After stitching fix | ~85 → 42 |
-| After road search (lower rows) | ~30 |
-| After track-based alignment (converged) | **26** |
-
-The residual (~26, not perfect isotropy) is explained physically: the
-difference in the X- and Y-projection lever arms on 3 points, plus absorption
-(only ~30% of particles reach the lower rows). This is the limit of the
-detector geometry, not a bug.
-
-The track-based alignment (`diag_residuals.py`, additive, on clean 3+3 tracks
-only) converged in 2 iterations: mean(slope_x)/mean(slope_y) went from
-−0.25/−0.27 to −0.012/−0.002. The mean tilt is removed.
-
-Final alignment (example; re-measure on your own data):
-
-```yaml
-row_alignment_mm:
-  0: 0.0
-  1: 0.0
-  2: -214.2
-  3: -784.3
-  4: -152.3
-  5: -691.3
-  6: 10.4
-  7: -544.4
-```
-```
+Two-dimensional track candidates found independently in the X and Y projections
+(`src/event_quality.py`) are paired, converted into three-dimensional hits, and
+fitted with a straight line. This document describes that chain and the
+conventions it relies on.
 
 ---
+
+## 1. Coordinate conventions
+
+All positions are in millimetres. A cluster centroid, expressed as a channel
+number, is converted by `preprocessing.channel_to_mm`:
+
+$$x = \left(c - \frac{N_p}{2}\right) w - \delta_p,$$
+
+where $c$ is the centroid, $w = 120$ mm the channel pitch, $N_p$ the number of
+channels of plane $p$, and $\delta_p$ the alignment offset of that plane.
+
+Centring each plane by **its own width** is not optional. The planes differ in
+width — 50, 69, 48 and 72 channels for the gamma-X, gamma-Y, hadron-X and
+hadron-Y planes — so referring them all to one common centre would place their
+geometric centres at different physical positions and impose a width-dependent
+offset between planes, which the fit reads as a tilt even for a perfectly
+vertical track.
+
+The offsets $\delta_p$ are stored in `geometry.row_alignment_mm` and are derived
+from the data; see Section 5.
+
+---
+
+## 2. Excluding the gamma planes
+
+Planes 1 and 2 (`layer_idx` 0 and 1) are excluded from the direction fit through
+`tracking.fit_exclude_row_idx`. They are separated from the hadron block by
+220 mm of lead and a 2.2 m air gap, which breaks the trajectory of a traversing
+particle: their hits are not two well-aligned points at a long lever arm but two
+systematically displaced points that impose a large, spurious tilt. Including
+them strongly biases the azimuthal distribution; removing them restores it.
+
+The same restriction applies in the road search through `track_rows_x` and
+`track_rows_y`.
+
+---
+
+## 3. Matching the projections
+
+`match_xy_tracks_hybrid` pairs X and Y tracks in two stages.
+
+**Energy ranking.** A particle deposits comparable ionization in the X and Y
+chambers it crosses, so the two projections of one particle should carry similar
+total amplitude. Tracks in each projection are ordered by summed cluster
+amplitude and paired in rank. A pair is accepted when
+
+$$\frac{\max(E_X, E_Y)}{\min(E_X, E_Y)} \leq \texttt{energy\_ratio\_threshold} = 3.$$
+
+**Geometric assignment.** Pairs failing the energy test, together with any
+unpaired remainder, are assigned by proximity. Each track is extrapolated to a
+common height `z_common_mm` (2000 mm, near the middle of the hadron block) and
+the assignment minimizing the total distance is found with the Hungarian
+algorithm (`scipy.optimize.linear_sum_assignment`). Pairs further apart than
+`geometry_max_distance_mm` (5000 mm) are discarded.
+
+The ratio threshold accommodates Landau fluctuations and delta electrons, which
+routinely make the two projections of one particle differ in amplitude by a
+factor of a few.
+
+For the angular results of the paper only events yielding a **single** track in
+each projection are used, so the details of the multi-track assignment do not
+enter them.
+
+---
+
+## 4. Three-dimensional hits and the fit
+
+For each hit of the X track, the measured coordinate is $x$; the orthogonal
+coordinate $y$ at that depth, which the plane does not measure, is taken from the
+fitted line of the partner Y track, and symmetrically for the Y hits. Each hit
+therefore carries one measured and one interpolated coordinate, with base weights
+1.0 and 0.1 respectively.
+
+The line $x = s_x z + b_x$, $y = s_y z + b_y$ is fitted by weighted least
+squares. The weight of each point is further scaled by the multiple scattering
+accumulated above its plane,
+
+$$w_p \propto \left(\Sigma X / X_0\right)_p^{-1},$$
+
+so that planes deeper in the iron, where the direction has been perturbed more,
+carry less weight — without any assumption about the particle momentum. The
+cumulative radiation lengths come from `physics.get_cumulative_rad_length`,
+which reads the absorber structure from the configuration.
+
+The fit quality is reported as a dimensionless quantity, the weighted residual
+sum normalized by a characteristic cluster scale and by the degrees of freedom:
+
+$$\chi^2_{\mathrm{3D}} = \frac{\chi^2_x + \chi^2_y}{\sigma_\mathrm{typ}^2\,\mathrm{ndf}},
+\qquad \sigma_\mathrm{typ} = 200\ \mathrm{mm},
+\qquad \mathrm{ndf} = \max(1,\ 2N_\mathrm{hits} - 4).$$
+
+Tracks with $\chi^2_{\mathrm{3D}} > 10$ or fewer than three hits are rejected
+(`tracking.fitting.chi2_ndf_threshold`, `min_hits_3d`).
+
+The arrival direction follows from the fitted slopes:
+
+$$\theta = \arctan\sqrt{s_x^2 + s_y^2},
+\qquad \varphi = \operatorname{atan2}(-s_y, -s_x).$$
+
+`tracker.py` reports $\varphi$ in the **detector frame**. The offset of the
+detector X axis from north (`location.detector_angle_offset`) is added later, in
+`physics.altaz_to_radec`, when the direction is converted to equatorial
+coordinates.
+
+---
+
+## 5. Track-based alignment
+
+Residual per-plane offsets — from the mechanical mounting, from inactive channels
+that bias a centroid, from the section assembly — displace the effective centre
+of a plane by a fraction of its width. A constant offset in a single plane tilts
+every track crossing it, and the tilt accumulates over the lever arm of the
+stack. Left uncorrected these offsets are the dominant systematic in the
+reconstructed direction.
+
+They are removed through $\delta_p$, obtained from the tracks themselves. For a
+cosmic-ray flux symmetric in azimuth, the mean transverse position of the tracks
+crossing a plane must coincide with the geometric centre of that plane, so the
+mean position measures the residual offset:
+
+$$\delta_p \leftarrow \delta_p + \langle r_p \rangle.$$
+
+Two features are essential to convergence:
+
+- the procedure is applied **only to fully penetrating tracks** with three active
+  planes in each projection. A global tilt is absorbed into the straight-line fit
+  of each individual track and is therefore invisible in the per-track residuals;
+  only for a sample with continuous slope does the mean-position criterion pin
+  the offsets down. On quantized two-point tracks it does not converge reliably.
+- it is **iterative and additive**: reconstruct with the current offsets, measure
+  the mean residual in each plane, add it to that plane's offset, repeat. In
+  practice two passes suffice — the mean reconstructed slope in both projections
+  falls from about $-0.25$ with no alignment to about $-0.01$.
+
+Run with `analysis/diag_residuals.py`. The resulting offsets are those in
+`geometry.row_alignment_mm`:
+
+| Plane | Projection | $\delta_p$ (mm) |
+| ----- | ---------- | --------------- |
+| 3 | X | −214.2 |
+| 4 | Y | −784.3 |
+| 5 | X | −152.3 |
+| 6 | Y | −691.3 |
+| 7 | X | +10.4 |
+| 8 | Y | −544.4 |
+
+The offsets are effective quantities: they absorb mechanical displacement,
+dead-channel bias in the centroids, and any residual convention of the section
+assembly alike. Some are sizeable — up to about 0.8 m in the Y planes — and
+should not be read as a literal mechanical displacement.
+
+---
+
+## 6. Vertex finding
+
+Vertex reconstruction is a diagnostic and visualization feature; no published
+result depends on it.
+
+For `penetrating_muon` and `hadron_shower` labels, tracks are extrapolated to a
+type-dependent height (`tracking.cosmic_ray.auto_heights_m`) and clustered in the
+transverse plane with a simple single-linkage algorithm of radius
+`vertex_clustering_eps_m` (500 m). Each cluster with at least two tracks becomes
+a vertex, positioned at the mean of the extrapolated points, with the spread
+reported as a quality measure.
+
+For the remaining labels a single vertex is estimated from the longitudinal
+energy profile: the first plane at which the deposition rises sharply above the
+preceding one, or crosses a tenth of the maximum, is taken as the shower start,
+and the best track is evaluated at that height.
+
+---
+
+## 7. Resolution limits
+
+Most tracks have only two active planes per projection. With the lever arm of
+0.83 m and the 120 mm granularity, the reconstructed slope of a two-point track
+is quantized in steps of $w/L \approx 0.14$, which is 5–8° in angle near the
+vertical. Only fully penetrating tracks with three active planes in each
+projection have a continuous direction, and only that subset is used for the
+angular results.
+
+This is a property of the geometry, not of the algorithm. A larger data set
+improves the statistics of the clean sample but not its per-track resolution.
+
+---
+
+## 8. Command-line access
+
+```bash
+# 3D reconstruction of selected events, with CSV output
+python main.py reconstruct --ids 0,10,100 --save-csv output/reco.csv
+
+# All GOOD events
+python main.py reconstruct --min-quality GOOD --save-csv output/reco.csv
+
+# Interactive 3D view of one event
+python main.py visualize --ids 5 --type 3d
+
+# Streaming reconstruction of the full data set (single pass over the raw files)
+python analysis/reconstruct_all.py --config config/settings.yaml --min-quality GOOD
+```
+
+`main.py reconstruct` re-reads the raw files for each requested event and is
+intended for small selections. For the full data set use
+`analysis/reconstruct_all.py`, which reconstructs inline during a single
+streaming pass and computes the equatorial coordinates vectorially at the end.

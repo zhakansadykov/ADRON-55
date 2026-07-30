@@ -1,0 +1,279 @@
+# ============================================================================
+# ADRON-55 / HADRON-55 reconstruction pipeline — configuration template
+# ----------------------------------------------------------------------------
+# Copy to config/settings.yaml and adjust the paths. The working settings.yaml
+# is git-ignored because it holds local absolute paths; this template is the
+# committed reference.
+#
+# The values below are those used for the results reported in:
+#   An Open Reprocessing Pipeline and Detector-Response Characterization for
+#   the ADRON-55 High-Altitude Ionization Calorimeter. Appl. Sci. 2026.
+# ============================================================================
+
+geometry:
+  # Plane heights (mm) above the reference level, indexed 0 = plane 1 (top)
+  # to 7 = plane 8 (lowest active plane).
+  heights: [4275, 4200, 1460, 1300, 1010, 820, 630, 470]
+
+  # Channel pitch (mm), uniform across all planes.
+  channel_width: 120
+
+  # Nominal channel count of each plane after section assembly.
+  # The parallel sections of a row OVERLAP: they cover the same transverse
+  # positions at different depths and are aligned by array index. Assembly is
+  # therefore an index-aligned sum, without reversal and without truncation to
+  # the shortest section (see preprocessing.combine_overlap).
+  expected_channels:
+    row_1: 50    # X: left_g + right_g
+    row_2: 69    # Y: front_g + back_g
+    row_3: 48    # X: left_1 + middle_1 + right_1
+    row_4: 72    # Y: front_1 + back_1
+    row_5: 48    # X
+    row_6: 72    # Y
+    row_7: 48    # X
+    row_8: 72    # Y
+
+  max_channels: 72
+  detector_size_mm: 8640
+  max_camera_size: 72
+
+  # Track-based alignment offsets (mm), subtracted in channel_to_mm.
+  # Derived from the mean transverse residual of clean 3+3 tracks, iterated to
+  # convergence in two passes (analysis/diag_residuals.py). The gamma planes
+  # (index 0, 1) are excluded from the direction fit and keep an offset of zero.
+  # These are effective quantities: they absorb mechanical displacement,
+  # dead-channel bias in the centroids, and any residual assembly convention.
+  # Re-derive them for a different data set.
+  row_alignment_mm:
+    0: 0.0
+    1: 0.0
+    2: -214.2
+    3: -784.3
+    4: -152.3
+    5: -691.3
+    6: 10.4
+    7: -544.4
+
+tracking:
+  radius: 3
+  threshold: 5
+  h_max_extrapolation: 500000   # mm
+
+  # Planes excluded from the 3D direction fit. The gamma planes (index 0, 1)
+  # are separated from the hadron block by 220 mm of lead and a 2.2 m air gap,
+  # so their hits do not lie on the trajectory of the hadron-block segment.
+  fit_exclude_row_idx: [0, 1]
+
+  cosmic_ray:
+    extrapolation_mode: "auto"   # auto | fixed
+    auto_heights_m:
+      penetrating_muon: 15000
+      hadron_shower: 8000
+      em_shower: 10000
+      neutral_candidate: 8000
+      unknown: 10000
+    fixed_height_m: 10
+    vertex_clustering_eps_m: 500
+    vertex_min_tracks: 2
+
+  # X-to-Y projection matching. Tracks are ordered by energy and paired in rank
+  # when their energy ratio is within the threshold; the remainder is assigned
+  # geometrically.
+  hybrid_matching:
+    energy_ratio_threshold: 3.0
+    z_common_mm: 2000.0
+    geometry_max_distance_mm: 5000.0
+    method_priority: ["energy", "geometry"]
+
+  fitting:
+    sigma_typical_mm: 200.0      # cluster scale used to normalize chi2
+    chi2_ndf_threshold: 10.0     # 3D-fit acceptance
+    min_hits_3d: 3
+    weighted_least_squares: true
+    weights:
+      real_hit: 1.0
+      interpolated_hit: 0.1
+
+  vertex_finding:
+    hadron_shower_min_clusters: 3
+    hadron_shower_energy_threshold: 1000
+    hadron_shower_energy_ratio: 3.0
+    ignore_gamma_block: true
+
+# === ENERGY CALIBRATION ===
+# OPEN ITEM: mip_in_mv = 0.39 conflicts with the 390 mV quoted in the detector
+# documentation, a factor of 1000 in the absolute scale. The scale must be
+# anchored to the measured minimum-ionizing peak. Until then all energies are
+# on an uncalibrated ADC scale and no energy spectrum is reported.
+calibration:
+  adc_to_mv: 1.0
+  mip_in_mv: 0.39
+  mip_in_mev: 2.0
+
+# === SITE AND ASTROMETRY ===
+location:
+  latitude: 43.0433969225689
+  longitude: 76.9432723292418
+  altitude: 3340                # m a.s.l.
+  # Azimuth of the detector X axis relative to north (degrees). Applied to the
+  # reconstructed azimuth before the conversion to equatorial coordinates only;
+  # the azimuth distributions of the paper are reported in the detector frame.
+  detector_angle_offset: 0
+
+# === BATCH PROCESSING ===
+data:
+  # Relative paths; replace with absolute paths if the data live elsewhere.
+  raw_dir: "data/raw/bank0"
+  processed_dir: "data/processed"
+  years: [2021, 2023]
+  catalog_file: "events_catalog.h5"
+  filtered_file: "filtered_events.h5"
+
+  # Good-run selection and integrity audit. Events from these files are marked
+  # bad_run in the catalogue and excluded from analysis; they are not removed,
+  # so global_id remains stable. Regenerate with analysis/diag_runs.py and
+  # analysis/audit_raw_files.py.
+  #
+  # 40 files, 47 612 events (16.3% of the data set):
+  #   35 runs with an inactive DAQ branch (front/back sections of three of the
+  #      four Y planes absent),
+  #    3 files whose events duplicate another file,
+  #    2 files holding 2022 events misfiled into the 2021 directory.
+  exclude_files:
+    # --- inactive DAQ branch (dead Y readout) ---
+    - 210405_0.dat
+    - 210406_0.dat
+    - 210528_0.dat
+    - 210529_0.dat
+    - 210603.dat
+    - 210811.dat
+    - 210813.dat
+    - 210815.dat
+    - 210817.dat
+    - 210819x.dat
+    - 210821.dat
+    - 210827.dat
+    - 211003.dat
+    - 211021.dat
+    - 211023.dat
+    - 211025.dat
+    - 211027.dat
+    - 211029.dat
+    - 211031.dat
+    - 211112.dat
+    - 211114.dat
+    - 211116.dat
+    - 211201.dat
+    - 211202.dat
+    - 211203.dat
+    - 211205.dat
+    - 211207.dat
+    - 211209.dat
+    - 211211.dat
+    - 211213.dat
+    - 211215.dat
+    - 211217.dat
+    - 211219.dat
+    - 211221.dat
+    - 230413.dat
+    # --- duplicate records ---
+    - 210206-c.dat    # 244 events, all present in 210206.dat
+    - 210811-c.dat    # 199 events, all present in 210811.dat
+    - 210819.dat      # 181 events, all present in 210819x.dat
+    # --- 2022 events misfiled into the 2021 directory ---
+    - 220712.dat      # 583 events
+    - 220810-c.dat    # 73 events
+
+filters:
+  min_total_energy: 500
+  require_bottom_layers: true
+  # active_layers counts physical planes (0-8), not readout sections. The
+  # selection is driven by the per-projection thresholds below.
+  min_active_layers: 0
+  min_active_rows_x: 3          # >=3 X planes to fit a line in XZ
+  min_active_rows_y: 3          # >=3 Y planes to fit a line in YZ
+  min_hits_above_threshold: 5
+  hit_threshold: 5
+  max_total_energy: 0           # 0 = no upper limit
+
+visualization:
+  selection_mode: "by_criteria"   # by_id | by_criteria | first_n
+  event_ids: [0, 100, 500, 1234]
+  criteria:
+    sort_by: "total_energy"
+    ascending: false
+    limit: 10
+  first_n: 5
+  histograms:
+    output_dir: "output/histograms"
+    dpi: 300
+
+output:
+  save_path: "output/reconstruction.html"
+
+# === ABSORBER STRUCTURE (top to bottom, between planes) ===
+# before_row_N is the material between plane N-1 and plane N; before_row_1 is
+# the material above plane 1. Cumulative depths run from 0.18 to 6.43 nuclear
+# interaction lengths at the lowest active plane.
+absorber:
+  materials:
+    lead: { X0_mm: 5.6, lambda_I_mm: 170.0, Z: 82 }
+    iron: { X0_mm: 17.6, lambda_I_mm: 168.0, Z: 26 }
+    air:  { X0_mm: 304000.0, lambda_I_mm: 900000.0, Z: 7.3 }
+
+  layers:
+    before_row_1: { material: lead, thickness_mm: 30 }
+    before_row_2: { material: lead, thickness_mm: 15 }
+    before_row_3:                                # between the two blocks:
+      - { material: lead, thickness_mm: 220 }    #   electromagnetic target
+      - { material: air,  thickness_mm: 2200 }   #   decay gap
+      - { material: lead, thickness_mm: 130 }    #   hadron converter
+      - { material: iron, thickness_mm: 100 }
+    before_row_4: { material: iron, thickness_mm: 100 }
+    before_row_5: { material: iron, thickness_mm: 130 }   # +100 mm of neutron
+    before_row_6: { material: iron, thickness_mm: 130 }   #  counters, which are
+    before_row_7: { material: iron, thickness_mm: 130 }   #  not absorber
+    before_row_8: { material: iron, thickness_mm: 100 }
+
+# === EVENT QUALITY ===
+event_quality:
+  enabled: true
+
+  # Cluster finding
+  hit_threshold: 30
+  min_cluster_size: 1
+  min_cluster_amplitude: 50
+
+  # Veto conditions. Deliberately loose: they discard pathological events
+  # cheaply and are not intended to shape the physics sample.
+  veto:
+    saturation_fraction: 0.30
+    saturation_value: 4000
+    uniformity_cv_max: 0.15
+    min_total_energy: 100
+    min_total_hits: 3
+
+  road_search:
+    # Track finding is confined to the hadron block. The deepest planes are
+    # included as seeds so that their clusters, present in about a third of
+    # events, can supply the third point of a track.
+    seed_layers: [8, 7, 6, 5, 4]
+    track_rows_x: [7, 5, 3]     # hadron-block X planes (gamma plane 1 excluded)
+    track_rows_y: [8, 6, 4]     # hadron-block Y planes (gamma plane 2 excluded)
+    min_track_layers: 2
+    base_radius_channels: 3
+    max_layer_skips: 1
+
+  quality_classes:
+    excellent: 85
+    good: 65
+    poor: 40
+
+  logging:
+    level: INFO
+    dir: logs
+    trace_road_search: false
+
+  parallel:
+    n_workers: 4                # 0 = all available cores
+    chunk_size: 100

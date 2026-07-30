@@ -1,0 +1,9 @@
+numpy>=2.0
+scipy>=1.10
+pyyaml>=6.0
+matplotlib>=3.8
+plotly>=5.18
+astropy>=6.0
+h5py>=3.10
+pandas>=2.0
+tqdm>=4.66

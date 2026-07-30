@@ -1,0 +1,106 @@
+cff-version: 1.2.0
+title: >-
+  ADRON-55 reconstruction pipeline: an open reprocessing and
+  detector-response analysis chain for the ADRON-55 ionization
+  calorimeter
+message: >-
+  If you use this software, please cite both the software itself
+  and the accompanying paper.
+type: software
+authors:
+  - given-names: Turlan
+    family-names: Sadykov
+    orcid: 'https://orcid.org/0000-0002-4349-4616'
+    affiliation: >-
+      Institute of Physics and Technology, Satbayev University,
+      Almaty, Kazakhstan
+  - given-names: Alia
+    family-names: Argynova
+    orcid: 'https://orcid.org/0000-0002-3800-1485'
+    affiliation: >-
+      Institute of Physics and Technology, Satbayev University,
+      Almaty, Kazakhstan
+  - given-names: Khanshaiym
+    family-names: Makhmet
+    orcid: 'https://orcid.org/0000-0001-8700-7640'
+    affiliation: >-
+      Institute of Physics and Technology, Satbayev University,
+      Almaty, Kazakhstan
+  - given-names: Dinara
+    family-names: Kantarbayeva
+    orcid: 'https://orcid.org/0009-0008-9300-5121'
+    affiliation: >-
+      Institute of Physics and Technology, Satbayev University,
+      Almaty, Kazakhstan
+  - given-names: Yernar
+    family-names: Tautayev
+    orcid: 'https://orcid.org/0000-0003-3891-8733'
+    affiliation: >-
+      Institute of Physics and Technology, Satbayev University,
+      Almaty, Kazakhstan
+  - given-names: Yernazar
+    family-names: Mukanov
+    orcid: 'https://orcid.org/0000-0001-9528-5069'
+    affiliation: >-
+      Institute of Physics and Technology, Satbayev University,
+      Almaty, Kazakhstan
+  - given-names: Zhakypbek
+    family-names: Sadykov
+    orcid: 'https://orcid.org/0009-0003-7717-640X'
+    affiliation: >-
+      Institute of Physics and Technology, Satbayev University,
+      Almaty, Kazakhstan
+    email: zhakansadykov@gmail.com
+repository-code: 'https://github.com/zhakansadykov/ADRON-55'
+abstract: >-
+  An open, scripted reconstruction pipeline for the ADRON-55
+  ionization calorimeter at the Tien Shan high-altitude cosmic-ray
+  station (3340 m a.s.l., Kazakhstan). The pipeline decodes the raw
+  per-section detector format, assembles the overlapping chamber
+  sections into a position measurement, applies a data-driven
+  channel-to-position calibration and track-based plane alignment,
+  performs an integrity and good-run selection, finds clusters and
+  projection tracks with a road search confined to the hadron block,
+  and fits three-dimensional directions with a weighted
+  least-squares line. Diagnostic scripts reproduce every calibration
+  and every figure of the accompanying paper from the raw data.
+keywords:
+  - cosmic rays
+  - extensive air showers
+  - ionization calorimeter
+  - event reconstruction
+  - detector calibration
+  - track-based alignment
+  - reproducibility
+license: BSD-3-Clause
+version: '1.0'
+preferred-citation:
+  type: article
+  title: >-
+    An Open Reprocessing Pipeline and Detector-Response
+    Characterization for the ADRON-55 High-Altitude Ionization
+    Calorimeter
+  authors:
+    - given-names: Turlan
+      family-names: Sadykov
+      orcid: 'https://orcid.org/0000-0002-4349-4616'
+    - given-names: Alia
+      family-names: Argynova
+      orcid: 'https://orcid.org/0000-0002-3800-1485'
+    - given-names: Khanshaiym
+      family-names: Makhmet
+      orcid: 'https://orcid.org/0000-0001-8700-7640'
+    - given-names: Dinara
+      family-names: Kantarbayeva
+      orcid: 'https://orcid.org/0009-0008-9300-5121'
+    - given-names: Yernar
+      family-names: Tautayev
+      orcid: 'https://orcid.org/0000-0003-3891-8733'
+    - given-names: Yernazar
+      family-names: Mukanov
+      orcid: 'https://orcid.org/0000-0001-9528-5069'
+    - given-names: Zhakypbek
+      family-names: Sadykov
+      orcid: 'https://orcid.org/0009-0003-7717-640X'
+  journal: Applied Sciences
+  year: 2026

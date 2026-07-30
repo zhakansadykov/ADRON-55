@@ -1,0 +1,31 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# --- Данные (большие объёмы, НЕ в репозиторий) ---
+data/raw/
+data/processed/
+*.h5
+*.dat
+
+# --- Результаты и логи ---
+output/
+logs/
+
+# --- Локальный конфиг (абсолютные пути!) ---
+config/settings.yaml
+!config/settings.yaml.example
+
+# --- OS / служебное ---
+.DS_Store
+structure.txt
+
+# --- Черновики документов (по умолчанию вне репо) ---
+# Раскомментируй исключение, если захочешь хранить статью в репозитории:
+*.pdf
+*.docx
+*.pptx
+# !paper/draft.pdf
