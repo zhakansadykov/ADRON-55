@@ -1,31 +1,100 @@
-# --- Python ---
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-
-# --- Данные (большие объёмы, НЕ в репозиторий) ---
-data/raw/
-data/processed/
-*.h5
-*.dat
-
-# --- Результаты и логи ---
-output/
-logs/
-
-# --- Локальный конфиг (абсолютные пути!) ---
+# ============================================================
+# Local configuration (holds absolute paths — never committed)
+# ============================================================
 config/settings.yaml
+config/secrets.yaml
+config/local_settings.yaml
+config/.env
 !config/settings.yaml.example
 
-# --- OS / служебное ---
-.DS_Store
-structure.txt
+# ============================================================
+# Data, results and logs
+# ============================================================
+# The contents of these directories are ignored, but the directories
+# themselves are kept through their .gitkeep files. Ignoring "data/raw/"
+# outright would make the negation impossible: git cannot re-include a file
+# whose parent directory is excluded.
+data/raw/*
+data/processed/*
+output/*
+logs/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!output/.gitkeep
+!logs/.gitkeep
 
-# --- Черновики документов (по умолчанию вне репо) ---
-# Раскомментируй исключение, если захочешь хранить статью в репозитории:
-*.pdf
-*.docx
-*.pptx
-# !paper/draft.pdf
+*.h5
+*.hdf5
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+sdist/
+wheels/
+*.egg
+*.egg-info/
+.installed.cfg
+MANIFEST
+
+# ============================================================
+# Virtual environments
+# ============================================================
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ============================================================
+# Testing and type checking
+# ============================================================
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+.tox/
+.nox/
+
+# ============================================================
+# Notebooks
+# ============================================================
+.ipynb_checkpoints/
+
+# ============================================================
+# Editors and operating systems
+# ============================================================
+.vscode/
+.idea/
+.project
+.pydevproject
+.settings/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# ============================================================
+# Scratch files
+# ============================================================
+structure.txt
+*.bak
+*.orig
+*.tmp
+*.log

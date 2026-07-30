@@ -235,7 +235,7 @@ on Zenodo: **[10.5281/zenodo.21631377](https://doi.org/10.5281/zenodo.21631377)*
 
 The raw event data of the 2021 and 2023 seasons — 263 daily files, 291 358 event
 records — are archived as a separate Zenodo record:
-**[<DATA-DOI>](https://doi.org/<DATA-DOI>)**.
+**[10.5281/zenodo.21701891](https://doi.org/10.5281/zenodo.21701891)**.
 
 ---
 
