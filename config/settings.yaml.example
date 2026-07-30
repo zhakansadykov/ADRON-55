@@ -38,8 +38,13 @@ geometry:
   max_camera_size: 72
 
   # Track-based alignment offsets (mm), subtracted in channel_to_mm.
-  # Derived from the mean transverse residual of clean 3+3 tracks, iterated to
-  # convergence in two passes (analysis/diag_residuals.py). The gamma planes
+  # Derived from the mean transverse residual of clean 3+3 tracks and iterated to
+  # the fixed point with analysis/diag_residuals.py. At these values the mean
+  # residual is below 0.1 mm in every hadron-block plane and the mean
+  # reconstructed slope is below 1e-4 in both projections. Verify convergence
+  # rather than assuming it: an intermediate iteration can leave one projection
+  # aligned and the other carrying a residual tilt, which feeds a 360-degree
+  # periodic term into the azimuth. The gamma planes
   # (index 0, 1) are excluded from the direction fit and keep an offset of zero.
   # These are effective quantities: they absorb mechanical displacement,
   # dead-channel bias in the centroids, and any residual assembly convention.
@@ -47,12 +52,12 @@ geometry:
   row_alignment_mm:
     0: 0.0
     1: 0.0
-    2: -214.2
-    3: -784.3
-    4: -152.3
-    5: -691.3
-    6: 10.4
-    7: -544.4
+    2: -323.1
+    3: -935.6
+    4: -220.9
+    5: -888.1
+    6: -106.5
+    7: -871.2
 
 tracking:
   radius: 3
