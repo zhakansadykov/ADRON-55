@@ -94,6 +94,22 @@ def main():
         model = model / model[mask].sum() * counts[mask].sum()
     axa.plot(centers, model, '--', color=COLORS['model'], lw=2,
              label=r'$\cos^2\theta\,\sin\theta$' + '\n(no acceptance corr.)')
+
+    # Teeth of the two-point slope comb, theta_k = arctan(k*w/L) with w = 120 mm
+    # and L = 830 mm. The three-point fit samples a much finer lattice, but the
+    # population still concentrates on these values, so the comb survives the
+    # binning and is marked rather than smoothed away.
+    w_pitch, lever = 120.0, 830.0
+    for k in range(1, 6):
+        tk = np.degrees(np.arctan(k * w_pitch / lever))
+        if tk > 90:
+            break
+        axa.axvline(tk, color=COLORS['accent'], ls=':', lw=1.0, alpha=0.8,
+                    zorder=0, label='quantization comb' if k == 1 else None)
+        axa.annotate(f'$k$={k}', xy=(tk, axa.get_ylim()[1]), xytext=(0, -2),
+                     textcoords='offset points', ha='center', va='top',
+                     fontsize=7, color=COLORS['accent'])
+
     axa.set_xlabel(r'Zenith angle $\theta$ (deg)')
     axa.set_ylabel('Events')
     axa.legend(fontsize=8.5)
