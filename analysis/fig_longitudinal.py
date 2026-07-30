@@ -88,6 +88,9 @@ def main():
     ap.add_argument('--sample', type=int, default=40000)
     ap.add_argument('--stride', type=int, default=7)
     ap.add_argument('--out', default='output/paper_plots')
+    ap.add_argument('--from-npz', default=None,
+                    help="load the accumulators produced by longitudinal_blocks.py "
+                         "instead of scanning the raw files")
     args = ap.parse_args()
 
     import yaml
@@ -105,40 +108,45 @@ def main():
 
     x0, li, mm = cumulative_depth(cfg)
 
-    occ = np.zeros(8, dtype=float)          # events with signal in the plane
-    esum = np.zeros(8, dtype=float)         # summed plane energy
-    esq = np.zeros(8, dtype=float)          # sum of squares, for the standard error
-    n = 0
-    seen = 0
-    excluded = 0
-    below_trigger = 0
-    for ev in data_loader.iter_all_events(data_cfg['raw_dir'], years=data_cfg.get('years')):
-        if ev.get('source_file') in exclude_set:      # good-run selection
-            excluded += 1
-            continue
-        seen += 1
-        if (seen - 1) % args.stride != 0:
-            continue
-        with contextlib.redirect_stdout(io.StringIO()):
-            X_layers, _, Y_layers, _ = preprocessing.unify_layers(ev['arrays'], expected)
-        row_e = np.zeros(8, dtype=np.float64)
-        row_hit = np.zeros(8, dtype=bool)
-        for layers, idxs in ((X_layers, X_IDX), (Y_layers, Y_IDX)):
-            for layer, idx in zip(layers, idxs):
-                a = np.asarray(layer, dtype=np.float64)
-                m = a >= ped
-                row_e[idx] = float(a[m].sum())
-                row_hit[idx] = bool(np.any(m))
-        # Software trigger: total energy above threshold
-        if row_e.sum() < trigger:
-            below_trigger += 1
-            continue
-        n += 1
-        esum += row_e
-        esq += row_e * row_e
-        occ += row_hit.astype(float)
-        if n >= args.sample:
-            break
+    if args.from_npz:
+        d = np.load(args.from_npz)
+        occ, esum, esq = d['occ'], d['esum'], d['esq']
+        n, seen, excluded, below_trigger = (int(v) for v in d['counts'])
+    else:
+        occ = np.zeros(8, dtype=float)          # events with signal in the plane
+        esum = np.zeros(8, dtype=float)         # summed plane energy
+        esq = np.zeros(8, dtype=float)          # sum of squares, for the standard error
+        n = 0
+        seen = 0
+        excluded = 0
+        below_trigger = 0
+        for ev in data_loader.iter_all_events(data_cfg['raw_dir'], years=data_cfg.get('years')):
+            if ev.get('source_file') in exclude_set:      # good-run selection
+                excluded += 1
+                continue
+            seen += 1
+            if (seen - 1) % args.stride != 0:
+                continue
+            with contextlib.redirect_stdout(io.StringIO()):
+                X_layers, _, Y_layers, _ = preprocessing.unify_layers(ev['arrays'], expected)
+            row_e = np.zeros(8, dtype=np.float64)
+            row_hit = np.zeros(8, dtype=bool)
+            for layers, idxs in ((X_layers, X_IDX), (Y_layers, Y_IDX)):
+                for layer, idx in zip(layers, idxs):
+                    a = np.asarray(layer, dtype=np.float64)
+                    m = a >= ped
+                    row_e[idx] = float(a[m].sum())
+                    row_hit[idx] = bool(np.any(m))
+            # Software trigger: total energy above threshold
+            if row_e.sum() < trigger:
+                below_trigger += 1
+                continue
+            n += 1
+            esum += row_e
+            esq += row_e * row_e
+            occ += row_hit.astype(float)
+            if n >= args.sample:
+                break
 
     if n == 0:
         raise SystemExit("No events; check raw_dir, years and exclude_files.")

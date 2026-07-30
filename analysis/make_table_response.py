@@ -10,7 +10,7 @@ enters as zero), and the same quantity CONDITIONED on the plane having fired.
 
 The conditional column is what settles the obvious question about the apparent
 collapse of the deposition in plane 6: conditioned on firing, all eight planes
-fall in a common band of about 235-324 ADC, so the entire difference between the
+fall in a common band of about 237-332 ADC, so the entire difference between the
 projections in the unconditional means originates in the occupancy.
 
 Output: output/paper_plots/table_response.tex
@@ -56,13 +56,13 @@ def main():
         r"\begin{table}[H]",
         r"\centering",
         r"\caption{Longitudinal response of the eight active planes on the "
-        r"good-run sample ($N=34\,821$; uniform one-in-seven sampling of the "
-        r"data set). Occupancy is the fraction of events with any above-pedestal "
+        r"good-run sample ($N=243\,744$, the full good-run data set). "
+        r"Occupancy is the fraction of events with any above-pedestal "
         r"signal in the plane, with 68\% Wilson intervals; the mean deposition "
         r"per channel is taken over all events (ADC counts; events without "
         r"signal in the plane enter as zero), and the last column conditions it "
         r"on the plane having fired. Conditioned on firing, all planes fall in "
-        r"a common 235--324~ADC band: the entire difference between the "
+        r"a common 237--332~ADC band: the entire difference between the "
         r"projections in the unconditional means originates in the occupancy.}",
         r"\label{tab:response}",
         r"\begin{tabular}{cccccc}",

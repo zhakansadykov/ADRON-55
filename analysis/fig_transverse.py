@@ -96,6 +96,9 @@ def main():
                     help="half-width in channels of the window around the peak used for the axis")
     ap.add_argument('--min-row-energy', type=float, default=100.0)
     ap.add_argument('--out', default='output/paper_plots')
+    ap.add_argument('--from-npz', default=None,
+                    help="load the accumulators produced by transverse_blocks.py "
+                         "instead of scanning the raw files")
     args = ap.parse_args()
 
     import yaml
@@ -111,46 +114,53 @@ def main():
     r_edges = np.linspace(0, args.rmax, args.nbins + 1)
     r_centers = 0.5 * (r_edges[:-1] + r_edges[1:])
 
-    hist_x = np.zeros(args.nbins); hist_y = np.zeros(args.nbins)
-    hist_gamma = np.zeros(args.nbins); hist_hadron = np.zeros(args.nbins)
-    hist_per_row = {i: np.zeros(args.nbins) for i in range(8)}
-    n, seen, excluded, below_trigger = 0, 0, 0, 0
+    if args.from_npz:
+        d = np.load(args.from_npz)
+        hist_x, hist_y = d['x'], d['y']
+        hist_gamma, hist_hadron = d['gamma'], d['hadron']
+        hist_per_row = {i: d[f'row{i}'] for i in range(8)}
+        n, seen, excluded, below_trigger = (int(v) for v in d['counts'])
+    else:
+        hist_x = np.zeros(args.nbins); hist_y = np.zeros(args.nbins)
+        hist_gamma = np.zeros(args.nbins); hist_hadron = np.zeros(args.nbins)
+        hist_per_row = {i: np.zeros(args.nbins) for i in range(8)}
+        n, seen, excluded, below_trigger = 0, 0, 0, 0
 
-    for ev in data_loader.iter_all_events(data_cfg['raw_dir'], years=data_cfg.get('years')):
-        if ev.get('source_file') in exclude_set:
-            excluded += 1
-            continue
-        seen += 1
-        if (seen - 1) % args.stride != 0:
-            continue
-        with contextlib.redirect_stdout(io.StringIO()):
-            X_layers, _, Y_layers, _ = preprocessing.unify_layers(ev['arrays'], expected)
+        for ev in data_loader.iter_all_events(data_cfg['raw_dir'], years=data_cfg.get('years')):
+            if ev.get('source_file') in exclude_set:
+                excluded += 1
+                continue
+            seen += 1
+            if (seen - 1) % args.stride != 0:
+                continue
+            with contextlib.redirect_stdout(io.StringIO()):
+                X_layers, _, Y_layers, _ = preprocessing.unify_layers(ev['arrays'], expected)
 
-        # Trigger as in fig_longitudinal: the above-pedestal sum over all planes
-        tot = 0.0
-        for layer in list(X_layers) + list(Y_layers):
-            a = np.asarray(layer, dtype=np.float64)
-            tot += float(a[a >= ped_trig].sum())
-        if tot < trigger:
-            below_trigger += 1
-            continue
-        n += 1
+            # Trigger as in fig_longitudinal: the above-pedestal sum over all planes
+            tot = 0.0
+            for layer in list(X_layers) + list(Y_layers):
+                a = np.asarray(layer, dtype=np.float64)
+                tot += float(a[a >= ped_trig].sum())
+            if tot < trigger:
+                below_trigger += 1
+                continue
+            n += 1
 
-        for layers, idxs, hist_proj in ((X_layers, X_IDX, hist_x),
-                                        (Y_layers, Y_IDX, hist_y)):
-            for layer, idx in zip(layers, idxs):
-                prof = layer_profile(layer, cw, r_edges, args.pedestal,
-                                     args.window_ch, args.min_row_energy)
-                if prof is None:
-                    continue
-                hist_proj += prof
-                hist_per_row[idx] += prof
-                if idx in GAMMA_IDX:
-                    hist_gamma += prof
-                else:
-                    hist_hadron += prof
-        if n >= args.sample:
-            break
+            for layers, idxs, hist_proj in ((X_layers, X_IDX, hist_x),
+                                            (Y_layers, Y_IDX, hist_y)):
+                for layer, idx in zip(layers, idxs):
+                    prof = layer_profile(layer, cw, r_edges, args.pedestal,
+                                         args.window_ch, args.min_row_energy)
+                    if prof is None:
+                        continue
+                    hist_proj += prof
+                    hist_per_row[idx] += prof
+                    if idx in GAMMA_IDX:
+                        hist_gamma += prof
+                    else:
+                        hist_hadron += prof
+            if n >= args.sample:
+                break
 
     if n == 0:
         raise SystemExit("No events; check raw_dir, years and exclude_files.")
